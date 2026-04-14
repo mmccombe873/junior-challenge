@@ -81,7 +81,6 @@ public class CostCalculator {
     public BudgetResultDTO calculate(
             List<MatchWithCityDTO> matches,
             Double budget,
-            String originCityId,
             List<FlightPrice> flightPrices,
             City originCity
     ) {
@@ -89,19 +88,56 @@ public class CostCalculator {
         //
         // Steps:
         //   1. Sort matches by kickoff date
+        List<MatchWithCityDTO> sortedMatches = matches.stream()
+                .sorted(Comparator.comparing(MatchWithCityDTO::getKickoff))
+                .toList();
+
         //   2. Find countries visited (from match cities)
+        List<String> visitedCountries = sortedMatches.stream()
+                .map(match -> match.getCity().getCountry())
+                .distinct()
+                .toList();
+
         //   3. Find missing countries (compare against REQUIRED_COUNTRIES)
+        List<String> missingCountries = new ArrayList<>(REQUIRED_COUNTRIES);
+        missingCountries.removeAll(visitedCountries);
+
         //   4. Calculate costs using helper methods:
-        //      - ticketsCost = calculateTicketsCost(sortedMatches)
-        //      - flightsCost = calculateFlightsCost(originCity, sortedMatches, flightPrices)
-        //      - accommodationCost = calculateAccommodationCost(sortedMatches)
+        double ticketsCost = calculateTicketsCost(sortedMatches);
+        double flightsCost = calculateFlightsCost(originCity, sortedMatches, flightPrices);
+        double accommodationCost = calculateAccommodationCost(sortedMatches);
+        double totalCost = ticketsCost + flightsCost + accommodationCost;
+
         //   5. Build CostBreakdownDTO with the costs
+        CostBreakdownDTO costBreakdown = new CostBreakdownDTO(
+                ticketsCost,
+                flightsCost,
+                accommodationCost,
+                totalCost
+        );
+
         //   6. Determine feasibility: no missing countries AND totalCost <= budget
-        //   7. Generate suggestions using generateSuggestions() helper
+        boolean feasible = missingCountries.isEmpty() && totalCost <= budget;
+        List<String> suggestions = new ArrayList<>();
+
+        if(!feasible) {
+            //   7. Generate suggestions using generateSuggestions() helper
+            suggestions = generateSuggestions(missingCountries, totalCost, budget, sortedMatches);
+        }
+
         //   8. Build route using BuildRouteUtil.buildRoute(sortedMatches, "budget-optimised")
+        OptimisedRouteDTO route = BuildRouteUtil.buildRoute(sortedMatches, "budget-optimised");
+
         //   9. Return BudgetResultDTO with all the data
-        //
-        return null;
+        return new BudgetResultDTO(
+                feasible,
+                route,
+                costBreakdown,
+                visitedCountries,
+                missingCountries,
+                totalCost,
+                suggestions
+        );
     }
 
     /**
