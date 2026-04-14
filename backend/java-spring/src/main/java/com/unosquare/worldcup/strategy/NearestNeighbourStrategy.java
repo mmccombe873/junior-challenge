@@ -3,10 +3,14 @@ package com.unosquare.worldcup.strategy;
 import com.unosquare.worldcup.dto.MatchWithCityDTO;
 import com.unosquare.worldcup.dto.OptimisedRouteDTO;
 import com.unosquare.worldcup.model.City;
+import com.unosquare.worldcup.model.Match;
 import com.unosquare.worldcup.util.BuildRouteUtil;
 import com.unosquare.worldcup.util.HaversineUtil;
 import org.springframework.stereotype.Component;
+import org.springframework.util.RouteMatcher;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -77,21 +81,73 @@ public class NearestNeighbourStrategy implements RouteStrategy {
         //
         // Steps:
         //   1. Handle empty/null matches - use createEmptyRoute()
+        if (matches == null || matches.isEmpty()) {
+            return createEmptyRoute();
+        }
+
         //   2. Sort matches by kickoff date
+        List<MatchWithCityDTO> sortedMatches = matches.stream()
+                .sorted(Comparator.comparing(MatchWithCityDTO::getKickoff))
+                .toList();
+
         //   3. Group matches by date (use Collectors.groupingBy)
-        //   4. For each date (in sorted order):
-        //      - If only 1 match that day, add it to orderedMatches
-        //      - If multiple matches, pick the nearest to currentCity
-        //   5. Track currentCity as you process each match
+        Map<LocalDate, List<MatchWithCityDTO>> result = sortedMatches.stream()
+                .collect(Collectors.groupingBy(m -> m.getKickoff().toLocalDate()));
+
+        // As a test required passing in a null origin city, I created this to select an origin
+        // city using a match from the first day if the origin city is null.
+        if(originCity == null) {
+            originCity = determineOriginCity(result);
+        }
+
+        City currentCity = originCity;
+
+        List<MatchWithCityDTO> orderedMatches = new ArrayList<>();
+
+        for (LocalDate date : result.keySet().stream().sorted().toList()) {
+            List<MatchWithCityDTO> dayMatches = result.get(date);
+            //   4. For each date (in sorted order):
+            //      - If only 1 match that day, add it to orderedMatches
+            if(dayMatches.size() == 1) {
+                MatchWithCityDTO match = dayMatches.getFirst();
+                orderedMatches.add(match);
+                //   5. Track currentCity as you process each match
+                currentCity = match.getCity();
+                //      - If multiple matches, pick the nearest to currentCity
+            } else {
+                MatchWithCityDTO nearestMatch = null;
+                double minDistance = Double.MAX_VALUE;
+
+                for(MatchWithCityDTO match : dayMatches) {
+
+                    City city = match.getCity();
+
+                    double distance = HaversineUtil.calculateDistance(
+                            currentCity.getLatitude(),
+                            currentCity.getLongitude(),
+                            city.getLatitude(),
+                            city.getLongitude()
+                    );
+
+                    if(distance < minDistance) {
+                        minDistance = distance;
+                        nearestMatch = match;
+                    }
+                }
+
+                if(nearestMatch != null) {
+                    orderedMatches.add(nearestMatch);
+                    //   5. Track currentCity as you process each match
+                    currentCity = nearestMatch.getCity();
+                }
+            }
+        }
         //   6. Build and validate route using buildRoute() and validateRoute()
-        //
-        // Hints:
-        //   - Use HaversineUtil.calculateDistance(lat1, lon1, lat2, lon2) for distance
-        //   - Use match.getKickoff().toLocalDate() to get the date
-        //   - Use Comparator for sorting
-        //   - Use Collectors to group matches by date
-        //
-        return createEmptyRoute();
+        OptimisedRouteDTO route = buildRoute(orderedMatches, originCity);
+        validateRoute(route, sortedMatches);
+
+        return route;
+
     }
 
     // ============================================================
@@ -128,10 +184,95 @@ public class NearestNeighbourStrategy implements RouteStrategy {
         //   - route.setCountriesVisited(list of countries)
         //   - route.setMissingCountries(list of missing countries)
         //
-        route.setFeasible(false);
-        route.setWarnings(new ArrayList<>());
-        route.setCountriesVisited(new ArrayList<>());
-        route.setMissingCountries(new ArrayList<>());
+
+        List<String> warnings = new ArrayList<>();
+
+        if(matches.size() < MINIMUM_MATCHES) {
+            warnings.add("Route must have at least " + MINIMUM_MATCHES + " matches.");
+        }
+
+        List<String> countries = new ArrayList<>();
+
+        for(MatchWithCityDTO match : matches) {
+            String country = match.getCity().getCountry();
+            if(!countries.contains(country)) {
+                countries.add(country);
+            }
+        }
+
+        List<String> visitedCountries = matches.stream()
+                .map(match -> match.getCity().getCountry())
+                .distinct()
+                .toList();
+
+        List<String> missingCountries = new ArrayList<>(REQUIRED_COUNTRIES);
+        missingCountries.removeAll(visitedCountries);
+
+        if(!missingCountries.isEmpty()) {
+            warnings.add("Missing required countries: " + missingCountries);
+        }
+
+        boolean feasible = warnings.isEmpty();
+
+        route.setFeasible(feasible);
+        route.setWarnings(warnings);
+        route.setCountriesVisited(countries);
+        route.setMissingCountries(missingCountries);
+    }
+
+    /**
+     * If originCity is null, finds matches from the first two days and
+     * determines the most convenient origin city from the first match day.
+     *
+     * @param matchMap
+     * @return
+     */
+    private City determineOriginCity(Map<LocalDate, List<MatchWithCityDTO>> matchMap) {
+        City originCity = null;
+        List<LocalDate> matchDays = new ArrayList<>(matchMap.keySet());
+
+        List<MatchWithCityDTO> firstDayMatches = matchMap.get(matchDays.get(0));
+
+        // If only one match on first day → easy
+        if (firstDayMatches.size() == 1) {
+            originCity = firstDayMatches.getFirst().getCity();
+        } else {
+            // If there is no "next day", just pick the first
+            if (matchDays.size() < 2) {
+                originCity = firstDayMatches.getFirst().getCity();
+            } else {
+                List<MatchWithCityDTO> secondDayMatches = matchMap.get(matchDays.get(1));
+
+                MatchWithCityDTO bestMatch = null;
+                double minDistance = Double.MAX_VALUE;
+
+                // Compare each first-day match to ALL second-day matches
+                for (MatchWithCityDTO firstMatch : firstDayMatches) {
+                    City firstCity = firstMatch.getCity();
+
+                    for (MatchWithCityDTO secondMatch : secondDayMatches) {
+                        City secondCity = secondMatch.getCity();
+
+                        double distance = HaversineUtil.calculateDistance(
+                                firstCity.getLatitude(),
+                                firstCity.getLongitude(),
+                                secondCity.getLatitude(),
+                                secondCity.getLongitude()
+                        );
+
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            bestMatch = firstMatch;
+                        }
+                    }
+                }
+
+                if (bestMatch != null) {
+                    originCity = bestMatch.getCity();
+                }
+            }
+        }
+        return originCity;
     }
 
     

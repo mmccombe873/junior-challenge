@@ -4,6 +4,8 @@ import com.unosquare.worldcup.dto.*;
 import com.unosquare.worldcup.service.RouteService;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * RouteController — YOUR TASK #3
  *
@@ -36,9 +38,9 @@ public class RouteController {
     // ============================================================
     @PostMapping("/optimise")
     public OptimisedRouteDTO optimise(@RequestBody OptimiseRequestDTO request) {
-        // TODO: Implement this endpoint
-        // Hint: Call routeService.optimise() with the match IDs and origin city ID from the request
-        return null;
+        List<String> matchIds = request.getMatchIds();
+        String originCityId = request.getOriginCityId();
+        return routeService.optimise(matchIds, originCityId);
     }
 
     // ============================================================
@@ -61,7 +63,11 @@ public class RouteController {
     public BudgetResultDTO calculateBudget(@RequestBody BudgetRequestDTO request) {
         // TODO: Implement this endpoint
         // Hint: Call routeService.calculateBudget() with the request data
-        return null;
+        List<String> matchIds = request.getMatchIds();
+        System.out.println(">> calculateBudget called with matchIds=" + matchIds.size());
+        double budget = request.getBudget();
+        String originCityId = request.getOriginCityId();
+        return routeService.calculateBudget(matchIds, budget, originCityId);
     }
 
     // ============================================================

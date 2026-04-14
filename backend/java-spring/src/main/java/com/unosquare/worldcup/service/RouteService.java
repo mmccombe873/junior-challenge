@@ -7,6 +7,7 @@ import com.unosquare.worldcup.dto.MatchWithCityDTO;
 import com.unosquare.worldcup.dto.OptimisedRouteDTO;
 import com.unosquare.worldcup.model.City;
 import com.unosquare.worldcup.model.FlightPrice;
+import com.unosquare.worldcup.model.Match;
 import com.unosquare.worldcup.repository.CityRepository;
 import com.unosquare.worldcup.repository.FlightPriceRepository;
 import com.unosquare.worldcup.repository.MatchRepository;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * RouteService — YOUR TASK #3.1
@@ -67,12 +69,26 @@ public class RouteService {
         //
         // Steps:
         //   1. Fetch matches from the database using matchRepository.findByIdIn(matchIds)
+        List<Match> matches = matchRepository.findByIdIn(matchIds);
+
         //   2. Convert Match entities to MatchWithCityDTO using MatchWithCityDTO.fromEntity()
+        List<MatchWithCityDTO> matchesWithCityDTO = matches.stream()
+                .map(MatchWithCityDTO::fromEntity)
+                .toList();
+
         //   3. Fetch origin city if provided using cityRepository.findById(originCityId)
+        City originCity = null;
+
+        if(originCityId != null) {
+            Optional<Match> match = matchRepository.findById(originCityId);
+            if(match.isPresent()) {
+                originCity = match.get().getCity();
+            }
+        }
+
         //   4. Call nearestNeighbourStrategy.optimise(matches, originCity)
         //   5. Return the result
-        //
-        return null;
+        return nearestNeighbourStrategy.optimise(matchesWithCityDTO, originCity);
     }
 
     /**
@@ -93,7 +109,7 @@ public class RouteService {
                 .orElseThrow(() -> new RuntimeException("Origin city not found: " + originCityId));
 
         // 4. Calculate costs
-        return costCalculator.calculate(matches, budget, originCityId, flightPrices, originCity);
+        return costCalculator.calculate(matches, budget, flightPrices, originCity);
     }
 
     /**
