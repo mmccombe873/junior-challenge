@@ -36,8 +36,6 @@ public class CityController {
 
     @GetMapping
     public List<City> getAll() {
-        // TODO: Implement this endpoint to return all cities
-        // Hint: Use cityService.getAllCities()
-        return null;
+        return cityService.getAllCities();
     }
 }
