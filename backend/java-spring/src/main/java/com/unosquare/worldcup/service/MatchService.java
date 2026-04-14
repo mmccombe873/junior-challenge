@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static org.hibernate.internal.util.collections.ArrayHelper.forEach;
+
 /**
  * MatchService — YOUR TASK #2.1
  *
@@ -46,10 +48,24 @@ public class MatchService {
         // Steps:
         //   1. If city is provided, use matchRepository.findByCityId(city)
         //      Otherwise use matchRepository.findAllOrderByKickoff()
+        List<Match> matches;
+        if(city != null) {
+            matches = matchRepository.findByCityId(city);
+        } else {
+            matches = matchRepository.findAllOrderByKickoff();
+        }
+
         //   2. If date is provided, filter matches by kickoff date
+        if(date != null) {
+            matches = matches.stream().filter(match -> match
+                            .getKickoff().toLocalDate().equals(date))
+                            .toList();
+        }
+
         //   3. Convert Match entities to MatchWithCityDTO using MatchWithCityDTO.fromEntity()
-        //
-        return new ArrayList<>();
+        return matches.stream()
+                .map(MatchWithCityDTO::fromEntity)
+                .toList();
     }
 
     /**

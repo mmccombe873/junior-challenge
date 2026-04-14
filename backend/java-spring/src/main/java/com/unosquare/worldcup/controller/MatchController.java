@@ -6,7 +6,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,9 +42,7 @@ public class MatchController {
     public List<MatchWithCityDTO> getMatches(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) LocalDate date) {
-        // TODO: Implement this endpoint
-        // Hint: Use matchService.getMatches(city, date)
-        return new ArrayList<>();
+        return matchService.getMatches(city, date);
     }
 
     @GetMapping("/{id}")
